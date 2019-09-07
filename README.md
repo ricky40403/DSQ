@@ -18,5 +18,5 @@ It should not affect the value range (because the parameter of the deep model sh
 
 ### Note
 ```
-note that is has not been test yet
+note that this has not been test yet
 ```
