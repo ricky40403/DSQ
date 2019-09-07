@@ -16,3 +16,7 @@ Instead of using the strategies, this repository uses the max value of int32 as 
 It should not affect the value range (because the parameter of the deep model should not too large), and most of the edge device range is up to int32.  
 
 
+### Note
+```
+note that is has not been test yet
+```
