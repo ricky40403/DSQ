@@ -2,6 +2,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
+class RoundWithGradient(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x):
+        return x.round()
+    @staticmethod
+    def backward(ctx, g):
+        return g 
+
+
 class DSQConv(nn.Conv2d):
 	def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, num_bit = 8, QInput = False):
 		super(DSQConv, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
@@ -40,7 +50,8 @@ class DSQConv(nn.Conv2d):
 		# where does support autograd
 		# use normolize and round instead
 		delta = torch.max(x) - torch.min(x)
-		x = ((x - torch.min(x))/delta).round() * 2 - 1
+		x = ((x - torch.min(x))/delta)
+		x = RoundWithGradient.apply(x) * 2 -1
 
 		return x
 
