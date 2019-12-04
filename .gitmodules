@@ -1,3 +1,4 @@
 [submodule "PyTransformer"]
 	path = PyTransformer
 	url = https://github.com/ricky40403/PyTransformer.git
+	branch = hotfix
