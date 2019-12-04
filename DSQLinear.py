@@ -12,9 +12,9 @@ class RoundWithGradient(torch.autograd.Function):
         return g 
 
 
-class DSQConv(nn.Conv2d):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, num_bit = 8, QInput = False, bSetQ = True):
-        super(DSQConv, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+class DSQLinear(nn.Linear):
+    def __init__(self, in_features, out_features, bias=True, num_bit = 4, QInput = True, bSetQ = True):
+        super(DSQLinear, self).__init__(in_features, out_features, bias=bias)
         self.num_bit = num_bit
         self.quan_input = QInput
         self.bit_range = 2**self.num_bit -1	 
@@ -37,36 +37,31 @@ class DSQConv(nn.Conv2d):
                 self.lA  = nn.Parameter(data = torch.tensor((-1) * (2**32)).float())
                 self.alphaA = nn.Parameter(data = torch.tensor(0.2).float())
 
-
-
-    def phi_function(self, x, mi, alpha, delta):
-
+    def phi_function(self, x, mi, alpha, delta):            
         # alpha should less than 2 or log will be None
         alpha = alpha.clamp(None, 2)
         s = 1/(1-alpha)
-        k = (1/delta) * (2/alpha - 1).log()        
-        x = (((x - mi) *k ).tanh()) * s        
-        return x	
+        k = (1/delta) * (2/alpha - 1).log()
+
+        out = s * ((k * (x - mi)).tanh())
+
+        return out  
 
     def sgn(self, x):
         # x = torch.where(x>=0, 1.0, -1.0)
         # where does support autograd
         # use normolize and round instead
         delta = torch.max(x) - torch.min(x)
-        x = (x/delta + 0.5)
-        # x = ((x - torch.min(x))/delta)
-        # x.sub_(torch.min(x)).div_(delta)        
+        x = ((x - torch.min(x))/delta)
         x = RoundWithGradient.apply(x) * 2 -1
 
         return x
 
     def dequantize(self, x, lower_bound, delta, interval):
 
-        # save mem
-        x =  ((x+1)/2 + interval) * delta + lower_bound
-        # x.add_(1).div_(2).add_(interval).mul_(delta).add_(lower_bound)
+        out = lower_bound + delta * (interval + (x+1)/2)
 
-        return x
+        return out
 
     def forward(self, x):
         if self.is_quan:
@@ -109,11 +104,10 @@ class DSQConv(nn.Conv2d):
                 Qactivation = self.phi_function(Qactivation, mi, self.alphaA, delta)
                 Qactivation = self.sgn(Qactivation)
                 Qactivation = self.dequantize(Qactivation, cur_min, delta, interval)
-           
-            output = F.conv2d(Qactivation, Qweight, Qbias,  self.stride, self.padding, self.dilation, self.groups)
-
+                                            
+            output = F.linear(Qactivation, Qweight, Qbias)
+            
         else:
-            output =  F.conv2d(x, self.weight, self.bias, self.stride,
-                        self.padding, self.dilation, self.groups)
+            output =  F.linear(x, self.weight, self.bias)
 
         return output
