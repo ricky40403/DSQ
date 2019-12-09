@@ -23,7 +23,7 @@ import torchvision.models as models
 from tensorboardX import SummaryWriter
 
 from PyTransformer.transformers.torchTransformer import TorchTransformer
-from PyTransformer.transformers.quantize import QConv2d, QuantConv2d, QLinear
+from PyTransformer.transformers.quantize import QConv2d, QuantConv2d, QLinear, ReLUQuant
 from DSQConv import DSQConv
 from DSQLinear import DSQLinear
 
@@ -93,6 +93,9 @@ parser.add_argument('--log_path', default='log', type=str,
 parser.add_argument('-q', '--quantize', default=None, type=str,
                     help='quantization type.')
 
+parser.add_argument('--quantize_input', dest='quantize_input', action='store_true',                    
+                    help='quantization input.')
+
 parser.add_argument('--quan_bit', default=8, type=int,
                     help='quantization bit num.')
 
@@ -103,7 +106,6 @@ best_acc1 = 0
 
 def main():
     args = parser.parse_args()
-
     
 
     if args.seed is not None:
@@ -172,24 +174,32 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.quantize is not None:        
         transformer = TorchTransformer()
         if args.quantize == "uniform":		    
-            print("Using Uniform Quantization...")
-            transformer.register(nn.Conv2d, QuantConv2d)	    
-            # transformer.register(nn.Linear, QLinear)
-            # model = torch.quantization.prepare(model, {nn.Conv2d, nn.BatchNorm2d,  nn.Linear}, inplace=True)
+            print("Using Uniform Quantization...")     
+            print(args.quantize_input)       
+            if args.quantize_input:
+                print("Quaintization Input !!!")
+                transformer.register(nn.Conv2d, QuantConv2d)	    
+            else:
+                print("No Quaintization Input !!!")
+                transformer.register(nn.Conv2d, QConv2d)	               
+            
         else:
             print("Using DSQConv...")
             transformer.register(nn.Conv2d, DSQConv)
             # transformer.register(nn.Linear, DSQLinear)
-
+        # transformer.register(nn.ReLU, ReLUQuant)
         model = transformer.trans_layers(model)
         
         # set quan bit
         # current use num_bit   
         print("Setting target quanBit to {} bit".format(args.quan_bit))      
-        set_quanbit(model, args.quan_bit)
-            
-    # sys.exit()
-    # print(model)
+        model = set_quanbit(model, args.quan_bit)
+        print("Setting Quantization Input : {} ".format(args.quantize_input))      
+        model = set_quanInput(model, args.quantize_input)
+    
+    # log_alpha(model)
+    print(model)
+    # sys.exit()    
     
 
     if args.distributed:
@@ -291,8 +301,9 @@ def main_worker(gpu, ngpus_per_node, args):
 
     if args.evaluate:
         validate(val_loader, model, criterion, args)
-        return
-
+        return   
+    
+    
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             train_sampler.set_epoch(epoch)
@@ -303,7 +314,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         # evaluate on validation set
                   
-        acc1 = validate(val_loader, model, criterion, args)
+        acc1 = validate(val_loader, model, criterion, args, epoch)
 
         # remember best acc@1 and save checkpoint
         is_best = acc1 > best_acc1
@@ -318,7 +329,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 'state_dict': model.state_dict(),
                 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
-            }, is_best, save_path=os.path.join(args.log_path, args.log_path))
+            }, is_best, save_path=args.log_path)
 
 def set_quanbit(model, quan_bit = 8):
     
@@ -330,17 +341,34 @@ def set_quanbit(model, quan_bit = 8):
                 setattr(model._modules[module_name], "num_bit", quan_bit) 
     return model
 
-def log_alpha(model):
-    for module_name in model._modules:
+def set_quanInput(model, quan_input = True):
+    for module_name in model._modules:        
         if len(model._modules[module_name]._modules) > 0:
-            set_quanbit(model._modules[module_name], quan_bit)
+            set_quanInput(model._modules[module_name], quan_input)
         else:
-            # DSQ
+            # for DSQ
+            if hasattr(model._modules[module_name], "quan_input"):
+                setattr(model._modules[module_name], "quan_input", quan_input) 
+    return model
+
+def log_alpha(model, epoch, index = 0):    
+    for module_name in model._modules:                
+        if len(model._modules[module_name]._modules) > 0:
+            log_alpha(model._modules[module_name], index)
+        else:           
+            
+            # DSQ          
             if hasattr(model._modules[module_name], "alphaW"):
-                # writer.add_scalar("")
-                pass
+                writer.add_scalar("{}_{}_weight".format(module_name, index), getattr(model._modules[module_name], "alphaW"), epoch)
+                print("{}_{}_weight : {}".format(module_name, index, getattr(model._modules[module_name], "alphaW")))
+                
             if hasattr(model._modules[module_name], "alphaA"):
-                pass
+                writer.add_scalar("{}_{}_activation".format(module_name, index), getattr(model._modules[module_name], "alphaA"), epoch)
+                print("{}_{}_activation : {}".format(module_name, index, getattr(model._modules[module_name], "alphaA")))
+            
+            index = index +1
+            
+    return index
                 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
@@ -387,12 +415,18 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
         if i % args.print_freq == 0:
             progress.display(i)
+        
+        # if i % 100 == 0:
+        #     print("PPPPPPPPPPPPPPPPPPPPP")
+        #     with torch.no_grad():
+        #         log_alpha(model)
 
     writer.add_scalar("Train Loss", loss.item(), epoch)
     writer.add_scalar("Train Acc1", top1.avg, epoch)
     writer.add_scalar("Train Acc5", top5.avg, epoch)
 
-def validate(val_loader, model, criterion, args):
+
+def validate(val_loader, model, criterion, args, epoch):
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
     top1 = AverageMeter('Acc@1', ':6.2f')
@@ -406,6 +440,9 @@ def validate(val_loader, model, criterion, args):
     model.eval()
     
     with torch.no_grad():
+        # log alpha
+        log_alpha(model, log_alpha)
+        
         end = time.time()
         for i, (images, target) in enumerate(val_loader):
             if args.gpu is not None:
@@ -433,9 +470,9 @@ def validate(val_loader, model, criterion, args):
         print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
               .format(top1=top1, top5=top5))
 
-        writer.add_scalar("Val Loss", loss.item(), 1)
-        writer.add_scalar("Val Acc1", top1.avg, 1)
-        writer.add_scalar("Val Acc5", top5.avg, 1)
+        writer.add_scalar("Val Loss", loss.item(), epoch)
+        writer.add_scalar("Val Acc1", top1.avg, epoch)
+        writer.add_scalar("Val Acc5", top5.avg, epoch)
 
         
 
