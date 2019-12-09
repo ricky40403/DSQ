@@ -198,7 +198,7 @@ def main_worker(gpu, ngpus_per_node, args):
         model = set_quanInput(model, args.quantize_input)
     
     # log_alpha(model)
-    print(model)
+    # print(model)
     # sys.exit()    
     
 
@@ -300,7 +300,7 @@ def main_worker(gpu, ngpus_per_node, args):
         num_workers=args.workers, pin_memory=True)
 
     if args.evaluate:
-        validate(val_loader, model, criterion, args)
+        validate(val_loader, model, criterion, args, 0)
         return   
     
     
