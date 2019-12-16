@@ -6,7 +6,9 @@ import torch.nn.functional as F
 class RoundWithGradient(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x):
-        return x.round()
+        delta = torch.max(x) - torch.min(x)
+        x = (x/delta + 0.5)
+        return x.round() * 2 - 1
     @staticmethod
     def backward(ctx, g):
         return g 
@@ -27,15 +29,15 @@ class DSQConv(nn.Conv2d):
             # Weight
             self.uW = nn.Parameter(data = torch.tensor(2 **31 - 1).float())
             self.lW  = nn.Parameter(data = torch.tensor((-1) * (2**32)).float())
-            self.register_buffer('running_uw', self.uw.data) # init with uw
-            self.register_buffer('running_lw', self.lw.data) # init with lw
+            self.register_buffer('running_uw', torch.tensor([self.uW.data])) # init with uw
+            self.register_buffer('running_lw', torch.tensor([self.lW.data])) # init with lw
             self.alphaW = nn.Parameter(data = torch.tensor(0.2).float())
             # Bias
             if self.bias is not None:
                 self.uB = nn.Parameter(data = torch.tensor(2 **31 - 1).float())
                 self.lB  = nn.Parameter(data = torch.tensor((-1) * (2**32)).float())
-                self.register_buffer('running_uB', self.ub.data)# init with ub
-                self.register_buffer('running_lB', self.lb.data)# init with lb
+                self.register_buffer('running_uB', torch.tensor([self.uB.data]))# init with ub
+                self.register_buffer('running_lB', torch.tensor([self.lB.data]))# init with lb
                 self.alphaB = nn.Parameter(data = torch.tensor(0.2).float())
                 
 
@@ -43,8 +45,8 @@ class DSQConv(nn.Conv2d):
             if self.quan_input:
                 self.uA = nn.Parameter(data = torch.tensor(2 **31 - 1).float())
                 self.lA  = nn.Parameter(data = torch.tensor((-1) * (2**32)).float())
-                self.register_buffer('running_uA', self.uA.data) # init with uA
-                self.register_buffer('running_lA', self.lA.data) # init with lA
+                self.register_buffer('running_uA', torch.tensor([self.uA.data])) # init with uA
+                self.register_buffer('running_lA', torch.tensor([self.lA.data])) # init with lA
                 self.alphaA = nn.Parameter(data = torch.tensor(0.2).float())
 
     def clipping(self, x, upper, lower):
@@ -69,11 +71,12 @@ class DSQConv(nn.Conv2d):
         # x = torch.where(x>=0, 1.0, -1.0)
         # where does support autograd
         # use normolize and round instead
-        delta = torch.max(x) - torch.min(x)
-        x = (x/delta + 0.5)
+        # delta = torch.max(x) - torch.min(x)
+        # x = (x/delta + 0.5)
         # x = ((x - torch.min(x))/delta)
         # x.sub_(torch.min(x)).div_(delta)
-        x = RoundWithGradient.apply(x) * 2 -1
+        # x = RoundWithGradient.apply(x) * 2 -1
+        x = RoundWithGradient.apply(x)
 
         return x
 
@@ -89,9 +92,11 @@ class DSQConv(nn.Conv2d):
         if self.is_quan:
             # Weight Part
             # moving average
-            self.running_lw.mul_(1-self.momentum).add_((self.momentum) * self.lW)
-            self.running_uw.mul_(1-self.momentum).add_((self.momentum) * self.uW)
-            Qweight = self.clipping(self.weight, self.self.running_uw, self.self.running_lw)
+            # self.running_lw.mul_(1-self.momentum).add_((self.momentum) * self.lW)
+            # self.running_uw.mul_(1-self.momentum).add_((self.momentum) * self.uW)
+            cur_running_lw = self.running_lw.mul(1-self.momentum).add((self.momentum) * self.lW)
+            cur_running_uw = self.running_uw.mul(1-self.momentum).add((self.momentum) * self.uW)
+            Qweight = self.clipping(self.weight, cur_running_uw, cur_running_lw)
             cur_max = torch.max(Qweight)
             cur_min = torch.min(Qweight)
             delta =  (cur_max - cur_min)/(self.bit_range)
@@ -104,9 +109,11 @@ class DSQConv(nn.Conv2d):
             Qbias = self.bias
             # Bias			
             if self.bias is not None:
-                self.running_lB.mul_(1-self.momentum).add_((self.momentum) * self.lB)
-                self.running_uB.mul_(1-self.momentum).add_((self.momentum) * self.uB)
-                Qbias = self.clipping(self.bias, self.running_uB, self.running_lB)
+                # self.running_lB.mul_(1-self.momentum).add_((self.momentum) * self.lB)
+                # self.running_uB.mul_(1-self.momentum).add_((self.momentum) * self.uB)
+                cur_running_lB = self.running_lB.mul(1-self.momentum).add((self.momentum) * self.lB)
+                cur_running_uB = self.running_uB.mul(1-self.momentum).add((self.momentum) * self.uB)
+                Qbias = self.clipping(self.bias, cur_running_uB, cur_running_lB)
                 cur_max = torch.max(Qbias)
                 cur_min = torch.min(Qbias)
                 delta =  (cur_max - cur_min)/(self.bit_range)
@@ -119,9 +126,11 @@ class DSQConv(nn.Conv2d):
             # Input(Activation)
             Qactivation = x
             if self.quan_input:
-                self.running_lA.mul_(1-self.momentum).add_((self.momentum) * self.lA)
-                self.running_uA.mul_(1-self.momentum).add_((self.momentum) * self.uA)
-                Qactivation = self.clipping(x, self.running_uA, self.running_lA)
+                # self.running_lA.mul_(1-self.momentum).add_((self.momentum) * self.lA)
+                # self.running_uA.mul_(1-self.momentum).add_((self.momentum) * self.uA)
+                cur_running_lA = self.running_lA.mul(1-self.momentum).add((self.momentum) * self.lA)
+                cur_running_uA = self.running_uA.mul(1-self.momentum).add((self.momentum) * self.uA)
+                Qactivation = self.clipping(x, cur_running_uA, cur_running_lA)
                 cur_max = torch.max(Qactivation)
                 cur_min = torch.min(Qactivation)
                 delta =  (cur_max - cur_min)/(self.bit_range)
