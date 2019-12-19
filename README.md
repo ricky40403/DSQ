@@ -25,11 +25,11 @@ adding argments
 
 Examples  
 Training DSQ with 8 bit (no quantiza input)
-```python
+```
 python train.py -a resnet18  -q DSQ --quan_bit 8
 ```
 Training DSQ with 8 bit ( quantiza input)
-```python
+```
 python train.py -a resnet18  -q DSQ --quan_bit 8 -quantize_input
 ```
 
