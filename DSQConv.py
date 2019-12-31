@@ -14,6 +14,7 @@ class RoundWithGradient(torch.autograd.Function):
         return g 
 
 
+
 class DSQConv(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True,
                 momentum = 0.1,                
@@ -68,14 +69,6 @@ class DSQConv(nn.Conv2d):
         return x	
 
     def sgn(self, x):
-        # x = torch.where(x>=0, 1.0, -1.0)
-        # where does support autograd
-        # use normolize and round instead
-        # delta = torch.max(x) - torch.min(x)
-        # x = (x/delta + 0.5)
-        # x = ((x - torch.min(x))/delta)
-        # x.sub_(torch.min(x)).div_(delta)
-        # x = RoundWithGradient.apply(x) * 2 -1
         x = RoundWithGradient.apply(x)
 
         return x
@@ -84,7 +77,6 @@ class DSQConv(nn.Conv2d):
 
         # save mem
         x =  ((x+1)/2 + interval) * delta + lower_bound
-        # x.add_(1).div_(2).add_(interval).mul_(delta).add_(lower_bound)
 
         return x
 
@@ -92,10 +84,13 @@ class DSQConv(nn.Conv2d):
         if self.is_quan:
             # Weight Part
             # moving average
-            # self.running_lw.mul_(1-self.momentum).add_((self.momentum) * self.lW)
-            # self.running_uw.mul_(1-self.momentum).add_((self.momentum) * self.uW)
-            cur_running_lw = self.running_lw.mul(1-self.momentum).add((self.momentum) * self.lW)
-            cur_running_uw = self.running_uw.mul(1-self.momentum).add((self.momentum) * self.uW)
+            if self.training:
+                cur_running_lw = self.running_lw.mul(1-self.momentum).add((self.momentum) * self.lW)
+                cur_running_uw = self.running_uw.mul(1-self.momentum).add((self.momentum) * self.uW)
+            else:
+                cur_running_lw = self.running_lw
+                cur_running_uw = self.running_uw
+
             Qweight = self.clipping(self.weight, cur_running_uw, cur_running_lw)
             cur_max = torch.max(Qweight)
             cur_min = torch.min(Qweight)
@@ -111,8 +106,13 @@ class DSQConv(nn.Conv2d):
             if self.bias is not None:
                 # self.running_lB.mul_(1-self.momentum).add_((self.momentum) * self.lB)
                 # self.running_uB.mul_(1-self.momentum).add_((self.momentum) * self.uB)
-                cur_running_lB = self.running_lB.mul(1-self.momentum).add((self.momentum) * self.lB)
-                cur_running_uB = self.running_uB.mul(1-self.momentum).add((self.momentum) * self.uB)
+                if self.training:
+                    cur_running_lB = self.running_lB.mul(1-self.momentum).add((self.momentum) * self.lB)
+                    cur_running_uB = self.running_uB.mul(1-self.momentum).add((self.momentum) * self.uB)
+                else:
+                    cur_running_lB = self.running_lB
+                    cur_running_uB = self.running_uB
+
                 Qbias = self.clipping(self.bias, cur_running_uB, cur_running_lB)
                 cur_max = torch.max(Qbias)
                 cur_min = torch.min(Qbias)
@@ -126,10 +126,14 @@ class DSQConv(nn.Conv2d):
             # Input(Activation)
             Qactivation = x
             if self.quan_input:
-                # self.running_lA.mul_(1-self.momentum).add_((self.momentum) * self.lA)
-                # self.running_uA.mul_(1-self.momentum).add_((self.momentum) * self.uA)
-                cur_running_lA = self.running_lA.mul(1-self.momentum).add((self.momentum) * self.lA)
-                cur_running_uA = self.running_uA.mul(1-self.momentum).add((self.momentum) * self.uA)
+                                
+                if self.training:                    
+                    cur_running_lA = self.running_lA.mul(1-self.momentum).add((self.momentum) * self.lA)
+                    cur_running_uA = self.running_uA.mul(1-self.momentum).add((self.momentum) * self.uA)
+                else:
+                    cur_running_lA = self.running_lA
+                    cur_running_uA = self.running_uA
+                    
                 Qactivation = self.clipping(x, cur_running_uA, cur_running_lA)
                 cur_max = torch.max(Qactivation)
                 cur_min = torch.min(Qactivation)
@@ -140,8 +144,6 @@ class DSQConv(nn.Conv2d):
                 Qactivation = self.sgn(Qactivation)
                 Qactivation = self.dequantize(Qactivation, cur_min, delta, interval)
             
-            
-            # sys.exit()
             output = F.conv2d(Qactivation, Qweight, Qbias,  self.stride, self.padding, self.dilation, self.groups)
 
         else:

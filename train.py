@@ -106,6 +106,7 @@ best_acc1 = 0
 
 def main():
     args = parser.parse_args()
+
     
 
     if args.seed is not None:
@@ -416,7 +417,19 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
         if i % args.print_freq == 0:
             progress.display(i)
-        
+            remain_epoch = args.epochs - epoch
+            remain_iters = remain_epoch * len(train_loader) + (len(train_loader) - i)
+            remain_seconds = remain_iters * batch_time.get_avg()
+            seconds = (remain_seconds//1) % 60
+            minutes = (remain_seconds//(1*60)) % 60
+            hours = (remain_seconds//(1*60*60)) % 24
+            days = (remain_seconds//(1*60*60*24))
+            time_stamp = ""            
+            if (days > 0): time_stamp += "{} days, ".format(days)
+            if (hours > 0) : time_stamp += "{} hr, ".format(hours)
+            if (minutes > 0) : time_stamp += "{} min, ".format(minutes)
+            if (seconds > 0) : time_stamp += "{} sec, ".format(seconds)            
+            print(">>>>>>>>>>>> Remaining Times: {}  <<<<<<<<<<<<<<<<<".format(time_stamp) )
         # if i % 100 == 0:
         #     print("PPPPPPPPPPPPPPPPPPPPP")
         #     with torch.no_grad():
@@ -442,7 +455,7 @@ def validate(val_loader, model, criterion, args, epoch):
     
     with torch.no_grad():
         # log alpha
-        log_alpha(model, log_alpha)
+        log_alpha(model, epoch)
         
         end = time.time()
         for i, (images, target) in enumerate(val_loader):
@@ -466,7 +479,7 @@ def validate(val_loader, model, criterion, args, epoch):
 
             if i % args.print_freq == 0:
                 progress.display(i)
-
+                
         # TODO: this should also be done with the ProgressMeter
         print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
               .format(top1=top1, top5=top5))
@@ -505,6 +518,9 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+
+    def get_avg(self):
+        return self.avg
 
     def __str__(self):
         fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
