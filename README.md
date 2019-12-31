@@ -61,18 +61,14 @@ layer1.1.conv1  |  0.4405 | 0.2975 |
 layer1.1.conv2  |  0.3427 | 0.1959 |  
 layer2.0.conv1  |  0.3966 | 0.1653 |  
 layer2.0.conv2  |  0.4140 | 0.2014 |  
-layer2.downsample|  0.3275 | 0.1779 |  
+layer2.downsample| **0.3275** | **0.1779** |  
 layer2.1.conv1  |  0.4303 | 0.1675 |  
 layer2.1.conv2  |  0.4207 | 0.1570 |  
 layer3.0.conv1  |  0.4590 | 0.2774 |  
-layer3.0.conv2  |  0.4838 | 0.2569 |  
-layer3.downsample|  0.2305 | 0.1073 |  
+layer3.0.conv2  |  **0.4838** | **0.2569** |  
+layer3.downsample|  **0.2305** | **0.1073** |  
 layer3.1.conv1  |  0.4523 | 0.1775 |  
 layer3.1.conv2  |  0.4382 | 0.1792 |  
-
-#### Issue: 
-It seems that α of weights is bigger than that of activations.  
-Maybe the un-quantize batchnorm restricts the activation and cause the difference to the paper. (or someone can tell why)
 
 #### Resutls: 
 As the table2 in the paper, it indeed show that 
@@ -81,6 +77,10 @@ Second, different layers show different sensitivity to the quantization.
 For example, the downsampling convolution layers can be quantized much (a small α),
 while some layers such as layer3.0.conv2 are not suitable for  quantization (a large α).  
 ```
+
+#### Issue: 
+It seems that α of weights is bigger than that of activations.  
+Maybe the un-quantize batchnorm restricts the activation and cause the difference to the paper. (or someone can tell why)
 
 
 ### Update Note
