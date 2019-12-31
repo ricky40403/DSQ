@@ -25,17 +25,17 @@ adding argments
 
 Examples  
 Training DSQ with 8 bit (no quantiza input)
-```python
+```
 python train.py -a resnet18  -q DSQ --quan_bit 8 {Path to data}
 ```
 
 Training DSQ with 8 bit ( quantiza input)
-```python
+```
 python train.py -a resnet18  -q DSQ --quan_bit 8 --quantize_input {Path to data}
 ```
 
 Evaluating (directly use evaluation and resume from model_best.pth.tar)
-```python
+```
 python train.py -a resnet18 -q DSQ --quan_bit 8 --quantize_input --resume {path to model_best.pth.tar} -- evaluate {Path to data}
 ```
 # Experiments
@@ -85,6 +85,6 @@ while some layers such as layer3.0.conv2 are not suitable for  quantization (a l
 
 ### Update Note
 > 20191218:
-> Update uniform quantization results. It seems that the sgn function still need STE backward or the loss will becomes Nan.
+> Update uniform quantization results. It seems that the sgn function still need STE backward or the loss will becomes Nan.  
 > 20191231:
 > Update Experiments.
