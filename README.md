@@ -19,7 +19,7 @@ Scrip modified from <https://github.com/pytorch/examples/tree/master/imagenet>
 Now support uniform/DSQ quantization  
 adding argments  
 -q : quantization type, default is None  
--quantize_input : quantize input or not  
+--quantize_input : quantize input or not  
 --quan_bit : quantization bit num  
 --log_path : tensorboard log path to write, default folder is ./log.  
 
